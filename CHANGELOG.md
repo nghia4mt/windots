@@ -5,6 +5,8 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-31
+
 ### Added
 
 - Mục "Quy trình Git (git flow)" trong README.
