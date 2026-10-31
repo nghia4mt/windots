@@ -1,0 +1,17 @@
+# Chuẩn hoá line ending / diff cho repo
+* text=auto
+
+*.ps1 text
+*.psm1 text
+*.md text
+*.json text
+*.gitignore text
+*.gitattributes text
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.7z binary
+*.exe binary

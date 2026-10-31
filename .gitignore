@@ -1,0 +1,8 @@
+# Thư mục snapshot cấu hình
+config/**/*.bak.*
+config/**/logs/
+config/**/*.log
+config/**/*.tmp
+
+# Backup tạm
+*.bak.*
