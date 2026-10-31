@@ -27,6 +27,12 @@
 .PARAMETER RemoveOneDrive
     Uninstall OneDrive (needs admin). Local OneDrive files are left untouched.
 
+.PARAMETER RemoveEdge
+    Uninstall Microsoft Edge (needs admin) and block it from being reinstalled
+    by Edge Update / Windows Update. The Edge WebView2 runtime is kept, and its
+    automatic updates stay enabled, because widgets and Store apps depend on it.
+    Edge browsing data in %LOCALAPPDATA%\Microsoft\Edge is left untouched.
+
 .PARAMETER DisableCopilot
     Hide Copilot (policy + taskbar button).
 
@@ -41,7 +47,7 @@
 
 .PARAMETER All
     Shortcut for -IncludeXbox -IncludePhoneLink -DisableCopilot -DisableWidgets
-    -DisableBingSearch (OneDrive is NOT included on purpose).
+    -DisableBingSearch (OneDrive and Edge are NOT included on purpose).
 
 .EXAMPLE
     .\debloat-app.ps1 -DryRun
@@ -51,7 +57,7 @@
     # remove the default bloat only
 
 .EXAMPLE
-    .\debloat-app.ps1 -All -RemoveOneDrive -CreateRestorePoint
+    .\debloat-app.ps1 -All -RemoveOneDrive -RemoveEdge -CreateRestorePoint
 #>
 
 [CmdletBinding()]
@@ -60,6 +66,7 @@ param(
     [switch] $IncludeXbox,
     [switch] $IncludePhoneLink,
     [switch] $RemoveOneDrive,
+    [switch] $RemoveEdge,
     [switch] $DisableCopilot,
     [switch] $DisableWidgets,
     [switch] $DisableBingSearch,
@@ -162,6 +169,17 @@ $PhoneLinkApps = @(
     'MicrosoftWindows.CrossDevice'
 )
 
+# Microsoft Edge ships both as a classic desktop app (removed via its own
+# setup.exe) and, on some builds, as an Appx. Edge HTML (Win10) is Appx-only.
+$EdgeApps = @(
+    'Microsoft.MicrosoftEdge'
+    'Microsoft.MicrosoftEdge.Stable'
+)
+
+# Edge Update product GUIDs: block the browser, explicitly allow WebView2.
+$EdgeStableProduct = '{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}'
+$EdgeWebViewProduct = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+
 # Never removed, even if a list above is edited by mistake.
 $Protected = @(
     'Microsoft.WindowsStore'
@@ -191,6 +209,8 @@ $Protected = @(
     'MicrosoftWindows.Client*'
     'MicrosoftWindows.UndockedDevKit'
     'Microsoft.Win32WebViewHost'
+    'Microsoft.EdgeWebView2Runtime*'
+    'Microsoft.MicrosoftEdgeWebView2Runtime*'
 )
 
 # ---------------------------------------------------------------- helpers
@@ -374,6 +394,109 @@ function Disable-OneDrive {
     Write-Ok 'OneDrive uninstalled (your OneDrive folder is untouched)'
 }
 
+function Get-EdgeSetupPath {
+    $roots = @()
+    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ([string]::IsNullOrWhiteSpace($base)) { continue }
+        $roots += Join-Path $base 'Microsoft\Edge\Application'
+    }
+
+    $candidates = foreach ($root in ($roots | Where-Object { Test-Path -LiteralPath $_ })) {
+        foreach ($dir in (Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+            # Only version folders, e.g. 156.0.4314.50
+            if ($dir.Name -notmatch '^\d+(\.\d+){3}$') { continue }
+            $setup = Join-Path $dir.FullName 'Installer\setup.exe'
+            if (-not (Test-Path -LiteralPath $setup)) { continue }
+            [pscustomobject]@{ Path = $setup; Version = [version]$dir.Name }
+        }
+    }
+
+    $newest = $candidates | Sort-Object -Property Version -Descending | Select-Object -First 1
+    if ($newest) { return $newest.Path }
+    return $null
+}
+
+function Remove-EdgeShortcuts {
+    $shortcuts = @(
+        (Join-Path $env:PUBLIC 'Desktop\Microsoft Edge.lnk'),
+        (Join-Path $env:USERPROFILE 'Desktop\Microsoft Edge.lnk'),
+        (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Microsoft Edge.lnk'),
+        (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Microsoft Edge.lnk'),
+        (Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\Microsoft Edge.lnk')
+    )
+
+    foreach ($shortcut in $shortcuts) {
+        if (-not (Test-Path -LiteralPath $shortcut)) { continue }
+        if ($DryRun) {
+            Write-Plan "would delete shortcut $shortcut"
+            continue
+        }
+        Remove-Item -LiteralPath $shortcut -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Disable-EdgeReinstall {
+    if (-not $script:IsAdmin -and -not $DryRun) {
+        Write-Warn 'blocking Edge reinstall needs admin, skipped'
+        return
+    }
+
+    # Classic Edge Update registration (both registry views).
+    foreach ($key in @('HKLM:\SOFTWARE\Microsoft\EdgeUpdate', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate')) {
+        Set-RegistryValue $key 'InstallDefault' 0
+        Set-RegistryValue $key "Install$EdgeStableProduct" 0
+        Set-RegistryValue $key "Install$EdgeWebViewProduct" 1
+    }
+
+    # Official Edge Update policies. InstallDefault = 2 means "installs
+    # disabled", the per-product entries below override it: Edge stays blocked,
+    # WebView2 stays installable and keeps receiving updates.
+    $policyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\EdgeUpdate'
+    Set-RegistryValue $policyKey 'InstallDefault' 2
+    Set-RegistryValue $policyKey "Install$EdgeStableProduct" 0
+    Set-RegistryValue $policyKey "Install$EdgeWebViewProduct" 1
+    Set-RegistryValue $policyKey "Update$EdgeWebViewProduct" 1
+}
+
+function Remove-MicrosoftEdge {
+    Write-Info 'keeping Microsoft Edge WebView2 (widgets, Store and Office apps depend on it)'
+
+    Invoke-AppRemoval $EdgeApps
+
+    $setup = Get-EdgeSetupPath
+    if (-not $setup) {
+        Write-Skip 'Microsoft Edge (desktop) is not installed'
+    }
+    elseif ($DryRun) {
+        Write-Plan "would uninstall Microsoft Edge via $setup"
+    }
+    elseif (-not $script:IsAdmin) {
+        Write-Warn 'uninstalling Microsoft Edge needs admin, skipped'
+    }
+    else {
+        # Never touch msedgewebview2.exe.
+        Get-Process -Name msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Process -FilePath $setup -ArgumentList '--uninstall', '--system-level', '--verbose-logging', '--force-uninstall' -Wait
+
+        # The uninstaller can exit before its worker process finishes.
+        $attempts = 0
+        while ($attempts -lt 20 -and (Get-EdgeSetupPath)) {
+            Start-Sleep -Milliseconds 500
+            $attempts++
+        }
+
+        if (Get-EdgeSetupPath) {
+            Write-Warn 'Microsoft Edge is still installed (uninstall was blocked); reboot and re-run'
+        }
+        else {
+            Write-Ok 'Microsoft Edge'
+        }
+    }
+
+    Remove-EdgeShortcuts
+    Disable-EdgeReinstall
+}
+
 # ---------------------------------------------------------------- main
 
 Write-Host 'Windows 11 debloat' -ForegroundColor White
@@ -429,6 +552,11 @@ if ($IncludePhoneLink) {
 if ($RemoveOneDrive) {
     Write-Step 'Uninstalling OneDrive'
     Disable-OneDrive
+}
+
+if ($RemoveEdge) {
+    Write-Step 'Uninstalling Microsoft Edge (WebView2 is kept)'
+    Remove-MicrosoftEdge
 }
 
 if ($DisableCopilot) {

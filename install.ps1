@@ -11,7 +11,7 @@
       1. Install Scoop (per-user, no admin rights needed).
       2. Add the buckets required by the app list.
       3. Install the apps listed in $Apps (Sublime Text 4, Node.js, VS Code,
-         Python, OpenCode, ...).
+         Python, ...) and OpenCode V2 (desktop app + `opencode` CLI shim).
       4. Restore the PowerShell profiles/config stored in .\config.
 
     Run it from a NORMAL (non elevated) PowerShell window:
@@ -21,7 +21,7 @@
     Do not install/verify Scoop.
 
 .PARAMETER SkipApps
-    Do not install the apps from $Apps.
+    Do not install the apps from $Apps, nor OpenCode V2.
 
 .PARAMETER SkipConfig
     Do not restore the PowerShell configuration from .\config.
@@ -63,6 +63,11 @@ $ScoopRoot   = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 
 $ScoopShims  = Join-Path $ScoopRoot 'shims'
 $ScoopScript = Join-Path $ScoopShims 'scoop.ps1'
 
+# OpenCode V2 desktop (per-user install) and the CLI it bundles.
+$OpenCodeDir = Join-Path $env:LOCALAPPDATA 'Programs\ai.opencode.desktop'
+$OpenCodeCli = Join-Path $OpenCodeDir 'resources\opencode-cli.exe'
+$OpenCodeUrl = 'https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-win-{0}.exe'
+
 # Buckets that must exist before installing $Apps.
 $Buckets = @('extras', 'nerd-fonts')
 
@@ -82,7 +87,9 @@ $DefaultApps = @(
     'extras/vscode'             # Visual Studio Code
     'extras/googlechrome'       # Google Chrome (stable)
     'main/python'               # Python
-    'extras/opencode-desktop'   # OpenCode (GUI + CLI)
+    # OpenCode V2 is installed from opencode.ai (Install-OpenCode below):
+    # the Scoop `opencode-desktop` manifest is still V1 and Windows package
+    # managers are not supported by OpenCode V2.
 
     # quality of life
     'main/scoop-search'         # fast `scoop search`
@@ -289,16 +296,90 @@ function Install-AppList {
     }
 }
 
-function Set-OpenCodeCli {
-    # The Scoop manifest ships the GUI only; add the `opencode` CLI shim so the
-    # command works in PowerShell, cmd.exe and Git Bash.
-    $candidates = @(
-        (Join-Path $ScoopRoot 'apps\opencode-desktop\current\resources\opencode-cli.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Programs\ai.opencode.desktop\resources\opencode-cli.exe')
-    )
-    $cli = $candidates | Where-Object { Test-PathExists $_ } | Select-Object -First 1
+function Get-WindowsArch {
+    $arch = $env:PROCESSOR_ARCHITEW6432
+    if ([string]::IsNullOrWhiteSpace($arch)) { $arch = $env:PROCESSOR_ARCHITECTURE }
+    if ($arch -eq 'ARM64') { return 'arm64' }
+    return 'x64'
+}
 
-    if (-not $cli) {
+function Get-OpenCodeVersion {
+    if (-not (Test-PathExists $OpenCodeCli)) { return $null }
+
+    try {
+        $output = & $OpenCodeCli --version 2>$null
+        if (-not $output) { return $null }
+        return ($output | Select-Object -First 1).ToString().Trim()
+    }
+    catch {
+        return $null
+    }
+}
+
+function Test-OpenCodeV2Installed {
+    $version = Get-OpenCodeVersion
+    return [bool]($version -match '^(opencode\s+)?v?2\.')
+}
+
+function Install-OpenCode {
+    $version = Get-OpenCodeVersion
+    if (Test-OpenCodeV2Installed) {
+        Write-Ok "OpenCode V2 already installed ($version)"
+        return
+    }
+
+    # The old Scoop package is OpenCode V1 and lives next to the V2 install.
+    # Remove it so the Start menu and PATH do not keep a stale copy.
+    if (Test-ScoopAppInstalled 'extras/opencode-desktop') {
+        Write-Info 'removing the old OpenCode V1 Scoop package ...'
+        try {
+            & $ScoopScript uninstall 'opencode-desktop'
+            Write-Ok 'OpenCode V1 (Scoop) removed'
+        }
+        catch {
+            Write-Warn "could not remove the V1 Scoop package: $($_.Exception.Message)"
+        }
+    }
+
+    $arch = Get-WindowsArch
+    $url = $OpenCodeUrl -f $arch
+    $installer = Join-Path $env:TEMP "opencode-desktop-win-$arch.exe"
+
+    try {
+        Write-Info 'downloading OpenCode V2 desktop from opencode.ai ...'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+        Write-Info 'installing OpenCode V2 (silent, per-user) ...'
+        Start-Process -FilePath $installer -ArgumentList '/currentuser', '/S' -Wait
+    }
+    catch {
+        Write-Fail "OpenCode V2: $($_.Exception.Message)"
+        return
+    }
+    finally {
+        if (Test-PathExists $installer) {
+            Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # NSIS can return before the worker process has written the files.
+    $deadline = (Get-Date).AddSeconds(60)
+    while (-not (Test-OpenCodeV2Installed) -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 1
+    }
+
+    if (Test-OpenCodeV2Installed) {
+        Write-Ok "OpenCode V2 installed ($(Get-OpenCodeVersion))"
+    }
+    else {
+        Write-Fail 'OpenCode V2 installer finished but the CLI was not found; re-run this script'
+    }
+}
+
+function Set-OpenCodeCli {
+    # The desktop bundle ships the CLI; expose it as `opencode` in PowerShell,
+    # cmd.exe and Git Bash.
+    if (-not (Test-PathExists $OpenCodeCli)) {
         Write-Warn 'opencode-cli.exe not found, skipping the CLI shim'
         return
     }
@@ -306,10 +387,10 @@ function Set-OpenCodeCli {
     $binDir = Join-Path $env:USERPROFILE '.local\bin'
     New-Item -ItemType Directory -Path $binDir -Force | Out-Null
 
-    $cmdContent = "@echo off`r`n`"$cli`" %*`r`n"
+    $cmdContent = "@echo off`r`n`"$OpenCodeCli`" %*`r`n"
     [IO.File]::WriteAllText((Join-Path $binDir 'opencode.cmd'), $cmdContent, [Text.Encoding]::ASCII)
 
-    $shCli = $cli -replace '\\', '/'
+    $shCli = $OpenCodeCli -replace '\\', '/'
     $shContent = "#!/bin/sh`nexec `"$shCli`" `"`$@`"`n"
     [IO.File]::WriteAllText((Join-Path $binDir 'opencode'), $shContent, [Text.Encoding]::ASCII)
 
@@ -443,6 +524,9 @@ if (-not $SkipApps) {
     else {
         Write-Step 'Installing apps via Scoop'
         Install-AppList
+
+        Write-Step 'Installing OpenCode V2'
+        Install-OpenCode
         Set-OpenCodeCli
     }
 }
