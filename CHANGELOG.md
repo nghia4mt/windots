@@ -3,6 +3,12 @@
 Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 Định dạng theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/) và [Semantic Versioning](https://semver.org/lang/vi/).
 
+## [Unreleased]
+
+### Added
+
+- Mục "Quy trình Git (git flow)" trong README.
+
 ## [1.0.0] - 2026-10-31
 
 ### Added

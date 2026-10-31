@@ -119,6 +119,26 @@ Mở `install.ps1`, sửa mảng `$DefaultApps` (định dạng `<bucket>/<app>`
 scoop search <tên-app>
 ```
 
+## 5. Quy trình Git (git flow)
+
+- `main` — nhánh phát hành: chỉ nhận merge từ `release/*` / `hotfix/*`, mỗi bản có tag `vX.Y.Z`.
+- `develop` — nhánh tích hợp: nhận `feature/*` và merge ngược từ `release/*`.
+- `feature/<ten>` — tách từ `develop`, merge lại bằng `--no-ff`.
+- `release/<x.y.z>` — tách từ `develop` → merge vào `main` + tag → merge ngược vào `develop` → xoá nhánh.
+- `hotfix/<x.y.z>` — tách từ `main` → merge vào `main` + tag → merge vào `develop`.
+
+```bash
+git switch develop
+git switch -c feature/them-app
+# ... code ...
+git add -A && git commit -m "feat: them app moi"
+git switch develop
+git merge --no-ff feature/them-app
+git push origin develop
+```
+
+Bản phát hành hiện tại: tag [`v1.0.0`](https://github.com/nghia4mt/windots/releases/tag/v1.0.0).
+
 ## Ghi chú
 
 - Sau khi chạy xong, **mở terminal mới** để nhận PATH mới (`code`, `python`, `node`, `opencode`, `subl`, `chrome`...).
