@@ -8,6 +8,7 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 ### Added
 
 - Mục "Quy trình Git (git flow)" trong README.
+- `debloat-app.ps1`: tham số `-RemoveEdge` gỡ Microsoft Edge (app Appx + bản desktop qua `setup.exe`), xoá shortcut và chặn Edge Update/Windows Update cài lại, trong khi vẫn giữ Edge WebView2 và bật cập nhật WebView2.
 
 ## [1.0.0] - 2026-10-31
 
