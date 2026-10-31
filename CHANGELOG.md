@@ -10,6 +10,10 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 - Mục "Quy trình Git (git flow)" trong README.
 - `debloat-app.ps1`: tham số `-RemoveEdge` gỡ Microsoft Edge (app Appx + bản desktop qua `setup.exe`), xoá shortcut và chặn Edge Update/Windows Update cài lại, trong khi vẫn giữ Edge WebView2 và bật cập nhật WebView2.
 
+### Changed
+
+- `install.ps1`: chuyển OpenCode từ Scoop `opencode-desktop` (V1, 1.19.x) sang OpenCode **V2** desktop chính thức (tải từ `opencode.ai`, cài silent per-user), tự gỡ bản V1 Scoop nếu có và vẫn tạo shim lệnh `opencode` trỏ vào CLI đi kèm.
+
 ## [1.0.0] - 2026-10-31
 
 ### Added

@@ -49,9 +49,11 @@ Script làm theo thứ tự, và **chạy lại nhiều lần vẫn an toàn** (
    - `vscode` (lệnh `code`)
    - `googlechrome` (Google Chrome stable)
    - `python`
-   - `opencode-desktop` + tạo shim lệnh `opencode` trong `~\.local\bin`
+   - OpenCode **V2** (desktop, tải từ opencode.ai) + tạo shim lệnh `opencode` trong `~\.local\bin`
    - git, 7zip, aria2, dark, lessmsi, innounp, scoop-search, scoop-completion, JetBrainsMono Nerd Font
 4. Khôi phục profile trong `config\` vào `Documents\PowerShell` và `Documents\WindowsPowerShell`. File đang có trên máy sẽ được sao lưu thành `*.bak.<thời-gian>` trước khi ghi đè.
+
+> OpenCode V2 **không cài qua Scoop**: manifest `opencode-desktop` của Scoop vẫn là V1 (1.19.x) và V2 không hỗ trợ Windows package manager. Script tải installer chính thức từ `opencode.ai` và cài silent theo user (`/currentuser /S`), sau đó trỏ shim `opencode` vào `opencode-cli.exe` đi kèm. Nếu máy đã có V2 thì bỏ qua; nếu còn bản V1 cài bằng Scoop thì tự gỡ trước khi cài.
 
 > `config\` hiện đã chứa bản chụp profile của máy này, nên có thể copy nguyên thư mục `windots` sang máy mới là dùng được ngay.
 
@@ -60,7 +62,7 @@ Script làm theo thứ tự, và **chạy lại nhiều lần vẫn an toàn** (
 | Tham số | Ý nghĩa |
 |---|---|
 | `-SkipScoop` | Không cài/kiểm tra Scoop |
-| `-SkipApps` | Không cài app |
+| `-SkipApps` | Không cài app (gồm cả OpenCode V2) |
 | `-SkipConfig` | Không khôi phục cấu hình PowerShell |
 | `-SymlinkConfig` | Link profile tới file trong repo thay vì copy (sửa repo là máy đổi theo; cần Developer Mode hoặc quyền admin, nếu lỗi sẽ tự fallback sang copy) |
 | `-Apps main/git,extras/firefox` | Cài danh sách app khác thay cho danh sách mặc định |
