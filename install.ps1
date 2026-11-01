@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 
 <#
 .SYNOPSIS
@@ -8,14 +8,19 @@
     Idempotent: it can be run again at any time without breaking anything.
 
     Steps
-      1. Install Scoop (per-user, no admin rights needed).
-      2. Add the buckets required by the app list.
-      3. Install the apps listed in $Apps (Sublime Text 4, Node.js, VS Code,
+      1. Repair the user environment (drop PATH entries and dev variables
+         that point at a folder from an old machine/user).
+      2. Install Scoop (per-user, no admin rights needed).
+      3. Add the buckets required by the app list.
+      4. Install the apps listed in $Apps (Sublime Text 4, Node.js, VS Code,
          Python, ...) and OpenCode V2 (desktop app + `opencode` CLI shim).
-      4. Restore the PowerShell profiles/config stored in .\config.
+      5. Restore the PowerShell profiles/config stored in .\config.
 
-    Run it from a NORMAL (non elevated) PowerShell window:
-        powershell -ExecutionPolicy Bypass -File .\install.ps1
+    Requires PowerShell 7 (tested with 7.6.9); Windows PowerShell 5.1 is no
+    longer used.
+
+    Run it from a NORMAL (non elevated) PowerShell 7 window:
+        pwsh -File .\install.ps1
 
 .PARAMETER SkipScoop
     Do not install/verify Scoop.
@@ -171,6 +176,97 @@ function Add-UserPath {
     [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
     if (($env:PATH -split ';') -notcontains $Path) { $env:PATH = "$Path;$env:PATH" }
     Write-Ok "added $Path to user PATH"
+}
+
+function Repair-UserPath {
+    # A PATH copied from an old machine (or old Windows profile) keeps entries
+    # such as C:\Users\<old-user>\scoop\shims. Windows reports "The system
+    # cannot find the path specified." when something walks those directories,
+    # so drop entries that no longer exist and collapse duplicates.
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if ([string]::IsNullOrWhiteSpace($userPath)) { return }
+
+    $kept = @()
+    $removed = @()
+    $seen = @{}
+
+    foreach ($entry in ($userPath -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        $trimmed = $entry.Trim()
+        $key = $trimmed.TrimEnd('\').ToLowerInvariant()
+
+        $missing = $false
+        if ($trimmed -notmatch '%' -and $trimmed -notmatch '\*') {
+            $expanded = [Environment]::ExpandEnvironmentVariables($trimmed)
+            $missing = -not (Test-Path -LiteralPath $expanded)
+        }
+
+        if ($missing -or $seen.ContainsKey($key)) {
+            $removed += $trimmed
+            continue
+        }
+
+        $seen[$key] = $true
+        $kept += $trimmed
+    }
+
+    if ($removed.Count -eq 0) {
+        Write-Ok 'user PATH has no stale entries'
+        return
+    }
+
+    [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
+
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    if ([string]::IsNullOrWhiteSpace($machinePath)) {
+        $env:PATH = ($kept -join ';')
+    }
+    else {
+        $env:PATH = "$machinePath;" + ($kept -join ';')
+    }
+
+    foreach ($entry in $removed) { Write-Info "removed from PATH: $entry" }
+    Write-Ok "user PATH cleaned ($($removed.Count) stale/duplicate entries removed)"
+}
+
+function Repair-UserEnvironment {
+    # Dev tools often read JAVA_HOME / GHIDRA_INSTALL_DIR / ... and fail with
+    # "The system cannot find the path specified." when they point at a folder
+    # from an old machine. Only these well-known variables are checked.
+    $names = @(
+        'JAVA_HOME'
+        'GHIDRA_INSTALL_DIR'
+        'MAVEN_HOME'
+        'M2_HOME'
+        'GRADLE_HOME'
+        'ANDROID_HOME'
+        'ANDROID_SDK_ROOT'
+        'NVM_HOME'
+        'NVM_SYMLINK'
+    )
+
+    $removed = 0
+    foreach ($name in $names) {
+        $value = [Environment]::GetEnvironmentVariable($name, 'User')
+        if ($null -eq $value) { continue }
+
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $expanded = [Environment]::ExpandEnvironmentVariables($value)
+            if (Test-Path -LiteralPath $expanded) { continue }
+        }
+
+        [Environment]::SetEnvironmentVariable($name, $null, 'User')
+        Remove-ItemProperty -Path 'HKCU:\Environment' -Name $name -ErrorAction SilentlyContinue
+        Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
+        Write-Info "removed stale $name=$value"
+        $removed++
+    }
+
+    if ($removed -eq 0) {
+        Write-Ok 'user environment has no stale dev variables'
+    }
+    else {
+        Write-Ok "removed $removed stale user environment variable(s)"
+    }
 }
 
 # ---------------------------------------------------------------- scoop
@@ -512,6 +608,10 @@ function Write-Summary {
 
 Write-Host 'Windots bootstrap' -ForegroundColor White
 Write-Host "repo: $ScriptRoot"
+
+Write-Step 'Repairing the user environment'
+Repair-UserPath
+Repair-UserEnvironment
 
 if (-not $SkipScoop) {
     Install-Scoop

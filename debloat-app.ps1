@@ -1,5 +1,3 @@
-#Requires -Version 5.1
-
 <#
 .SYNOPSIS
     Remove the preinstalled "junk" apps that ship with a fresh Windows 11.
@@ -31,7 +29,16 @@
     Uninstall Microsoft Edge (needs admin) and block it from being reinstalled
     by Edge Update / Windows Update. The Edge WebView2 runtime is kept, and its
     automatic updates stay enabled, because widgets and Store apps depend on it.
-    Edge browsing data in %LOCALAPPDATA%\Microsoft\Edge is left untouched.
+    Edge browsing data in %LOCALAPPDATA%\Microsoft\Edge is kept unless
+    -RemoveEdgeProfile is also used.
+    The native uninstaller is tried first; on Windows 11 24H2+ (which blocks
+    command-line uninstalls) the script removes the Edge files/registrations
+    directly instead.
+
+.PARAMETER RemoveEdgeProfile
+    Also delete the current user's Edge browsing data (bookmarks, passwords,
+    history, cookies) from %LOCALAPPDATA%\Microsoft\Edge, plus leftover Edge
+    update/profile folders. Cannot be undone.
 
 .PARAMETER DisableCopilot
     Hide Copilot (policy + taskbar button).
@@ -58,6 +65,10 @@
 
 .EXAMPLE
     .\debloat-app.ps1 -All -RemoveOneDrive -RemoveEdge -CreateRestorePoint
+
+.EXAMPLE
+    .\debloat-app.ps1 -RemoveEdge -RemoveEdgeProfile
+    # remove Edge including bookmarks/passwords/history
 #>
 
 [CmdletBinding()]
@@ -67,6 +78,7 @@ param(
     [switch] $IncludePhoneLink,
     [switch] $RemoveOneDrive,
     [switch] $RemoveEdge,
+    [switch] $RemoveEdgeProfile,
     [switch] $DisableCopilot,
     [switch] $DisableWidgets,
     [switch] $DisableBingSearch,
@@ -85,34 +97,35 @@ if ($All) {
     $DisableBingSearch = $true
 }
 
-# --------------------------------------------------------- PowerShell 7 shim
+# ------------------------------------------------------------- version guard
 
-# Get-AppxPackage / Remove-AppxPackage / Get-AppxProvisionedPackage only work
-# in Windows PowerShell 5.1; PowerShell 7 cannot load the Appx module. Relaunch
-# there so `pwsh .\debloat-app.ps1` behaves exactly like from powershell.exe.
-if ($PSVersionTable.PSEdition -ne 'Desktop') {
-    Write-Host "    [info]    PowerShell $($PSVersionTable.PSVersion) cannot use the Appx cmdlets, relaunching in Windows PowerShell 5.1 ..." -ForegroundColor Yellow
-
-    $scriptPath = $PSCommandPath
-    if ([string]::IsNullOrWhiteSpace($scriptPath)) {
-        throw 'Cannot detect the script path; run debloat-app.ps1 with -File (not dot-sourced).'
-    }
-
-    $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $scriptPath)
-    foreach ($key in $PSBoundParameters.Keys) {
-        $value = $PSBoundParameters[$key]
-        if ($value -is [System.Management.Automation.SwitchParameter]) {
-            if ($value.IsPresent) { $childArgs += "-$key" }
-        }
-        else {
-            $childArgs += "-$key"
-            $childArgs += [string]$value
-        }
-    }
-
-    & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @childArgs
-    exit $LASTEXITCODE
+# Windows still launches .ps1 files with Windows PowerShell 5.1 ("Run with
+# PowerShell") and closes the window instantly, which looks like nothing
+# happened. Detect that early and keep a readable message on screen.
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    Write-Host ''
+    Write-Host 'debloat-app.ps1 requires PowerShell 7 (pwsh).' -ForegroundColor Red
+    Write-Host "This window is running Windows PowerShell $($PSVersionTable.PSVersion)." -ForegroundColor Red
+    Write-Host ''
+    Write-Host 'Use debloat.cmd instead: it starts PowerShell 7 and asks for admin.' -ForegroundColor Yellow
+    Write-Host 'Or open PowerShell 7 yourself and run:' -ForegroundColor Yellow
+    Write-Host '    pwsh -File .\debloat-app.ps1' -ForegroundColor Yellow
+    Write-Host ''
+    Start-Sleep -Seconds 20
+    exit 1
 }
+
+# ---------------------------------------------------------------- modules
+
+# Appx/Dism manage the built-in packages. Windows ships both modules and
+# PowerShell 7 loads them directly, so no Windows PowerShell 5.1 relaunch is
+# needed (or wanted) anymore.
+foreach ($module in @('Appx', 'Dism')) {
+    if (-not (Get-Module -ListAvailable -Name $module)) {
+        throw "PowerShell module '$module' is missing; cannot manage Appx packages."
+    }
+}
+Import-Module Appx, Dism -ErrorAction Stop
 
 # ---------------------------------------------------------------- app lists
 
@@ -435,6 +448,37 @@ function Remove-EdgeShortcuts {
     }
 }
 
+function Remove-EdgeProfileData {
+    $paths = @(
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\EdgeUpdate'),
+        (Join-Path $env:APPDATA 'Microsoft\Edge'),
+        (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.MicrosoftEdge_8wekyb3d8bbwe'),
+        (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.MicrosoftEdge.Stable_8wekyb3d8bbwe')
+    )
+
+    $found = $false
+    foreach ($path in $paths) {
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        $found = $true
+
+        if ($DryRun) {
+            Write-Plan "would delete Edge data $path"
+            continue
+        }
+
+        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $path) {
+            Write-Warn "could not fully delete $path (close Edge/WebView2 apps and re-run)"
+        }
+        else {
+            Write-Ok "deleted Edge data $path"
+        }
+    }
+
+    if (-not $found) { Write-Skip 'no Edge profile data found' }
+}
+
 function Disable-EdgeReinstall {
     if (-not $script:IsAdmin -and -not $DryRun) {
         Write-Warn 'blocking Edge reinstall needs admin, skipped'
@@ -443,6 +487,7 @@ function Disable-EdgeReinstall {
 
     # Classic Edge Update registration (both registry views).
     foreach ($key in @('HKLM:\SOFTWARE\Microsoft\EdgeUpdate', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate')) {
+        Set-RegistryValue $key 'DoNotUpdateToEdgeWithChromium' 1
         Set-RegistryValue $key 'InstallDefault' 0
         Set-RegistryValue $key "Install$EdgeStableProduct" 0
         Set-RegistryValue $key "Install$EdgeWebViewProduct" 1
@@ -458,35 +503,125 @@ function Disable-EdgeReinstall {
     Set-RegistryValue $policyKey "Update$EdgeWebViewProduct" 1
 }
 
+function Test-EdgeInstalled {
+    foreach ($root in @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\EdgeCore'),
+            (Join-Path $env:ProgramFiles 'Microsoft\Edge'),
+            (Join-Path $env:ProgramFiles 'Microsoft\EdgeCore')
+        )) {
+        if ($root -and (Test-Path -LiteralPath $root)) { return $true }
+    }
+    return [bool](Get-EdgeSetupPath)
+}
+
+function Remove-EdgeManually {
+    # Windows 11 24H2+ (and non-EEA regions) refuse the native uninstaller:
+    # exit code 93 = region policy, exit code 532 = caller not allow-listed.
+    # Remove the browser files/registrations directly; EdgeWebView and
+    # EdgeUpdate are kept so WebView2 apps and updates keep working.
+    Write-Info 'removing Edge files and registrations directly'
+
+    $service = Get-Service -Name 'MicrosoftEdgeElevationService' -ErrorAction SilentlyContinue
+    if ($service) {
+        Stop-Service -Name 'MicrosoftEdgeElevationService' -Force -ErrorAction SilentlyContinue
+        & sc.exe delete 'MicrosoftEdgeElevationService' | Out-Null
+        Write-Info 'removed orphan MicrosoftEdgeElevationService'
+    }
+
+    foreach ($root in @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\EdgeCore'),
+            (Join-Path $env:ProgramFiles 'Microsoft\Edge'),
+            (Join-Path $env:ProgramFiles 'Microsoft\EdgeCore')
+        )) {
+        if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+
+        & takeown.exe /f $root /r /d y | Out-Null
+        & icacls.exe $root /grant 'Administrators:(F)' /t /c | Out-Null
+        & attrib.exe -r -s -h /s /d "$root\*" | Out-Null
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+
+        if (Test-Path -LiteralPath $root) {
+            Write-Warn "could not fully remove $root (reboot and re-run)"
+        }
+        else {
+            Write-Ok "removed $root"
+        }
+    }
+
+    $keys = @(
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Edge',
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$EdgeStableProduct",
+        "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$EdgeStableProduct",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\ClientState\$EdgeStableProduct",
+        "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\ClientState\$EdgeStableProduct",
+        "HKCU:\SOFTWARE\Microsoft\EdgeUpdate\ClientState\$EdgeStableProduct",
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe',
+        'HKLM:\SOFTWARE\Clients\StartMenuInternet\Microsoft Edge',
+        'HKLM:\SOFTWARE\WOW6432Node\Clients\StartMenuInternet\Microsoft Edge',
+        'HKCU:\SOFTWARE\Clients\StartMenuInternet\Microsoft Edge'
+    )
+    foreach ($key in $keys) {
+        if (-not (Test-Path -LiteralPath $key)) { continue }
+        Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Ok "removed registry $key"
+    }
+
+    foreach ($key in @('HKLM:\SOFTWARE\RegisteredApplications', 'HKLM:\SOFTWARE\WOW6432Node\RegisteredApplications')) {
+        if (Test-Path -LiteralPath $key) {
+            Remove-ItemProperty -Path $key -Name 'Microsoft Edge' -ErrorAction SilentlyContinue
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\EdgeWebView\Application'))) {
+        Write-Warn 'Edge WebView2 runtime is missing; reinstall Microsoft.EdgeWebView2Runtime'
+    }
+    else {
+        Write-Info 'Edge WebView2 runtime kept'
+    }
+}
+
 function Remove-MicrosoftEdge {
     Write-Info 'keeping Microsoft Edge WebView2 (widgets, Store and Office apps depend on it)'
 
     Invoke-AppRemoval $EdgeApps
 
-    $setup = Get-EdgeSetupPath
-    if (-not $setup) {
+    if (-not (Test-EdgeInstalled)) {
         Write-Skip 'Microsoft Edge (desktop) is not installed'
     }
     elseif ($DryRun) {
-        Write-Plan "would uninstall Microsoft Edge via $setup"
+        Write-Plan 'would uninstall Microsoft Edge via setup.exe'
+        Write-Plan 'would fall back to direct file/registry removal if Windows blocks the uninstaller'
     }
     elseif (-not $script:IsAdmin) {
         Write-Warn 'uninstalling Microsoft Edge needs admin, skipped'
     }
     else {
-        # Never touch msedgewebview2.exe.
-        Get-Process -Name msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Process -FilePath $setup -ArgumentList '--uninstall', '--system-level', '--verbose-logging', '--force-uninstall' -Wait
+        $setup = Get-EdgeSetupPath
+        if ($setup) {
+            # Never touch msedgewebview2.exe.
+            Get-Process -Name msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            $process = Start-Process -FilePath $setup -ArgumentList '--uninstall', '--system-level', '--verbose-logging', '--force-uninstall' -Wait -PassThru
+            Write-Info "Edge uninstaller exit code: $($process.ExitCode)"
 
-        # The uninstaller can exit before its worker process finishes.
-        $attempts = 0
-        while ($attempts -lt 20 -and (Get-EdgeSetupPath)) {
-            Start-Sleep -Milliseconds 500
-            $attempts++
+            # The uninstaller can exit before its worker process finishes.
+            $attempts = 0
+            while ($attempts -lt 20 -and (Test-EdgeInstalled)) {
+                Start-Sleep -Milliseconds 500
+                $attempts++
+            }
         }
 
-        if (Get-EdgeSetupPath) {
-            Write-Warn 'Microsoft Edge is still installed (uninstall was blocked); reboot and re-run'
+        if (Test-EdgeInstalled) {
+            Write-Warn 'native uninstaller was blocked (exit code 93/532); using direct removal'
+            Remove-EdgeManually
+        }
+
+        if (Test-EdgeInstalled) {
+            Write-Warn 'Microsoft Edge files are still present; reboot and re-run'
         }
         else {
             Write-Ok 'Microsoft Edge'
@@ -494,6 +629,12 @@ function Remove-MicrosoftEdge {
     }
 
     Remove-EdgeShortcuts
+
+    if ($RemoveEdgeProfile) {
+        Write-Info 'removing Edge browsing data (bookmarks, passwords, history)'
+        Remove-EdgeProfileData
+    }
+
     Disable-EdgeReinstall
 }
 

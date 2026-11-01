@@ -5,6 +5,21 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 
 ## [Unreleased]
 
+### Added
+
+- `debloat.cmd`: launcher cho debloat — tự tìm `pwsh`, xin quyền admin, chạy với `-NoExit` để cửa sổ không đóng mất kết quả.
+- `debloat-app.ps1`: tham số `-RemoveEdgeProfile` xoá dữ liệu duyệt web Edge của user hiện tại (`%LOCALAPPDATA%\Microsoft\Edge`: bookmark, password, history, cookie) cùng các thư mục Edge cũ; dùng kèm `-RemoveEdge`.
+
+### Changed
+
+- `install.ps1`/`backup.ps1` yêu cầu **PowerShell 7** (`#Requires -Version 7.0`). `debloat-app.ps1` tự kiểm tra phiên bản, bỏ phần tự khởi động lại trong Windows PowerShell 5.1 và nạp trực tiếp module `Appx`/`Dism` trên PowerShell 7.6.9.
+- `debloat-app.ps1` khi bị chạy bằng Windows PowerShell 5.1 (ví dụ right-click → "Run with PowerShell") sẽ hiện thông báo rõ ràng và giữ cửa sổ 20 giây thay vì đóng ngay.
+
+### Fixed
+
+- `install.ps1`: tự dọn user PATH và các biến môi trường dev phổ biến (`JAVA_HOME`, `GHIDRA_INSTALL_DIR`, `MAVEN_HOME`, `M2_HOME`, `GRADLE_HOME`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `NVM_HOME`, `NVM_SYMLINK`) nếu trỏ tới đường dẫn không còn tồn tại, đồng thời bỏ mục PATH trùng — khắc phục lỗi *"The system cannot find the path specified."*.
+- `debloat-app.ps1 -RemoveEdge` hoạt động thực tế trên Windows 11 24H2+ (26300): nếu Microsoft chặn uninstaller command line (exit code 93/532), script tự xoá `Microsoft\Edge` + `Microsoft\EdgeCore`, uninstall/App Paths/StartMenuInternet/EdgeUpdate ClientState và shortcut; giữ nguyên Edge WebView2 + Edge Update, đồng thời thêm `DoNotUpdateToEdgeWithChromium`. Đã test gỡ Edge 156.0.4314.58, WebView2 156.0.4314.58 vẫn chạy.
+
 ## [1.1.0] - 2026-10-31
 
 ### Added
