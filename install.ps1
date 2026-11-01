@@ -14,7 +14,7 @@
       3. Add the buckets required by the app list.
       4. Install the apps listed in $Apps (Sublime Text 4, Node.js, VS Code,
          Python, ...) and OpenCode V2 (desktop app + `opencode` CLI shim).
-      5. Restore the PowerShell profiles/config stored in .\config.
+      5. Restore the PowerShell 7 profile/config stored in .\config.
 
     Requires PowerShell 7 (tested with 7.6.9); Windows PowerShell 5.1 is no
     longer used.
@@ -508,8 +508,7 @@ function Restore-PowerShellConfig {
     }
 
     $targets = [ordered]@{
-        'PowerShell'        = Join-Path $documents 'PowerShell'          # PowerShell 7
-        'WindowsPowerShell' = Join-Path $documents 'WindowsPowerShell'   # Windows PowerShell 5.1
+        'PowerShell' = Join-Path $documents 'PowerShell'   # PowerShell 7 only
     }
 
     $restored = 0

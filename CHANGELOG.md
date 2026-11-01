@@ -15,6 +15,10 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 - `install.ps1`/`backup.ps1` yêu cầu **PowerShell 7** (`#Requires -Version 7.0`). `debloat-app.ps1` tự kiểm tra phiên bản, bỏ phần tự khởi động lại trong Windows PowerShell 5.1 và nạp trực tiếp module `Appx`/`Dism` trên PowerShell 7.6.9.
 - `debloat-app.ps1` khi bị chạy bằng Windows PowerShell 5.1 (ví dụ right-click → "Run with PowerShell") sẽ hiện thông báo rõ ràng và giữ cửa sổ 20 giây thay vì đóng ngay.
 
+### Removed
+
+- Cấu hình Windows PowerShell 5.1 (`config/WindowsPowerShell`); chỉ giữ `config/PowerShell` cho PowerShell 7. `install.ps1`/`backup.ps1` không còn đọc/ghi `Documents\WindowsPowerShell`.
+
 ### Fixed
 
 - `install.ps1`: tự dọn user PATH và các biến môi trường dev phổ biến (`JAVA_HOME`, `GHIDRA_INSTALL_DIR`, `MAVEN_HOME`, `M2_HOME`, `GRADLE_HOME`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, `NVM_HOME`, `NVM_SYMLINK`) nếu trỏ tới đường dẫn không còn tồn tại, đồng thời bỏ mục PATH trùng — khắc phục lỗi *"The system cannot find the path specified."*.

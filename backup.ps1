@@ -6,9 +6,9 @@
 
 .DESCRIPTION
     Copies every file from
-        %USERPROFILE%\Documents\PowerShell           (PowerShell 7)
-        %USERPROFILE%\Documents\WindowsPowerShell    (Windows PowerShell 5.1)
+        %USERPROFILE%\Documents\PowerShell    (PowerShell 7)
     into the repository, so install.ps1 can put it back on a new machine.
+    Windows PowerShell 5.1 is no longer tracked.
 
     Files matching *.bak* / *.log / *.tmp are ignored.
 
@@ -60,8 +60,7 @@ if ([string]::IsNullOrWhiteSpace($documents)) {
 }
 
 $sources = [ordered]@{
-    'PowerShell'        = Join-Path $documents 'PowerShell'
-    'WindowsPowerShell' = Join-Path $documents 'WindowsPowerShell'
+    'PowerShell' = Join-Path $documents 'PowerShell'
 }
 
 $skipPattern = '\.(bak|log|tmp)$|\.bak\.'

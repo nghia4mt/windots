@@ -11,11 +11,9 @@ windots/
 ├─ debloat-app.ps1  # dọn app rác cài sẵn của Windows 11
 ├─ debloat.cmd      # double-click: tự tìm pwsh, xin quyền admin rồi chạy debloat
 ├─ config/
-│  ├─ PowerShell/            # PowerShell 7  -> %USERPROFILE%\Documents\PowerShell
-│  │  ├─ Microsoft.PowerShell_profile.ps1
-│  │  └─ powershell.config.json
-│  └─ WindowsPowerShell/     # Windows PowerShell 5.1 -> %USERPROFILE%\Documents\WindowsPowerShell
-│     └─ Microsoft.PowerShell_profile.ps1
+│  └─ PowerShell/            # PowerShell 7 -> %USERPROFILE%\Documents\PowerShell
+│     ├─ Microsoft.PowerShell_profile.ps1
+│     └─ powershell.config.json
 └─ README.md
 ```
 
@@ -25,7 +23,7 @@ windots/
 .\backup.ps1
 ```
 
-Script copy toàn bộ file trong `Documents\PowerShell` và `Documents\WindowsPowerShell` vào thư mục `config\` của project (bỏ qua file `*.bak*`, `*.log`, `*.tmp`).
+Script copy toàn bộ file trong `Documents\PowerShell` (PowerShell 7) vào thư mục `config\` của project (bỏ qua file `*.bak*`, `*.log`, `*.tmp`). Cấu hình Windows PowerShell 5.1 không còn được dùng.
 
 - `.\backup.ps1 -Mirror` : xoá luôn file trong `config\` mà trên máy đã không còn, để repo luôn khớp máy.
 - `.\backup.ps1 -Destination D:\path` : lưu sang thư mục khác.
@@ -53,7 +51,7 @@ Script làm theo thứ tự, và **chạy lại nhiều lần vẫn an toàn** (
    - `python`
    - OpenCode **V2** (desktop, tải từ opencode.ai) + tạo shim lệnh `opencode` trong `~\.local\bin`
    - git, 7zip, aria2, dark, lessmsi, innounp, scoop-search, scoop-completion, JetBrainsMono Nerd Font
-5. Khôi phục profile trong `config\` vào `Documents\PowerShell` và `Documents\WindowsPowerShell`. File đang có trên máy sẽ được sao lưu thành `*.bak.<thời-gian>` trước khi ghi đè.
+5. Khôi phục profile PowerShell 7 trong `config\` vào `Documents\PowerShell`. File đang có trên máy sẽ được sao lưu thành `*.bak.<thời-gian>` trước khi ghi đè.
 
 > OpenCode V2 **không cài qua Scoop**: manifest `opencode-desktop` của Scoop vẫn là V1 (1.19.x) và V2 không hỗ trợ Windows package manager. Script tải installer chính thức từ `opencode.ai` và cài silent theo user (`/currentuser /S`), sau đó trỏ shim `opencode` vào `opencode-cli.exe` đi kèm. Nếu máy đã có V2 thì bỏ qua; nếu còn bản V1 cài bằng Scoop thì tự gỡ trước khi cài.
 
