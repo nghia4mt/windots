@@ -92,6 +92,7 @@ $DefaultApps = @(
     'extras/vscode'             # Visual Studio Code
     'extras/googlechrome'       # Google Chrome (stable)
     'main/python'               # Python
+    'extras/telegram'           # Telegram Desktop (portable, persists tdata)
     # OpenCode V2 is installed from opencode.ai (Install-OpenCode below):
     # the Scoop `opencode-desktop` manifest is still V1 and Windows package
     # managers are not supported by OpenCode V2.

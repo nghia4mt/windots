@@ -8,6 +8,7 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 ### Added
 
 - `debloat.cmd`: launcher cho debloat — tự tìm `pwsh`, xin quyền admin, chạy với `-NoExit` để cửa sổ không đóng mất kết quả.
+- `install.ps1`: cài **Telegram Desktop** (`extras/telegram`) trong danh sách app mặc định; Scoop giữ `tdata` khi cập nhật.
 - `debloat-app.ps1`: tham số `-RemoveEdgeProfile` xoá dữ liệu duyệt web Edge của user hiện tại (`%LOCALAPPDATA%\Microsoft\Edge`: bookmark, password, history, cookie) cùng các thư mục Edge cũ; dùng kèm `-RemoveEdge`.
 
 ### Changed
