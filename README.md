@@ -1,6 +1,6 @@
 # windots
 
-Bộ script tự động dựng lại môi trường Windows sau khi cài lại máy: cài **Scoop**, cài các app hằng ngày (Sublime Text 4, Node.js, VS Code, Google Chrome, Python, Telegram Desktop, OpenCode...), khôi phục cấu hình PowerShell và dọn app rác của Windows 11.
+Bộ script tự động dựng lại môi trường Windows sau khi cài lại máy: cài **Scoop**, cài các app hằng ngày (Sublime Text 4, Node.js, VS Code, Google Chrome, Python, Telegram Desktop, Discord, OpenCode...), khôi phục cấu hình PowerShell và dọn app rác của Windows 11.
 
 ## Cấu trúc
 
@@ -50,6 +50,7 @@ Script làm theo thứ tự, và **chạy lại nhiều lần vẫn an toàn** (
    - `googlechrome` (Google Chrome stable)
    - `python`
    - `telegram` (Telegram Desktop, bản Scoop portable — giữ `tdata` khi cập nhật)
+   - `discord` (Discord, bản portable — giữ `data`/`log` khi cập nhật)
    - OpenCode **V2** (desktop, tải từ opencode.ai) + tạo shim lệnh `opencode` trong `~\.local\bin`
    - git, 7zip, aria2, dark, lessmsi, innounp, scoop-search, scoop-completion, JetBrainsMono Nerd Font
 5. Khôi phục profile PowerShell 7 trong `config\` vào `Documents\PowerShell`. File đang có trên máy sẽ được sao lưu thành `*.bak.<thời-gian>` trước khi ghi đè.
