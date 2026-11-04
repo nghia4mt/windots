@@ -162,7 +162,7 @@ git merge --no-ff feature/them-app
 git push origin develop
 ```
 
-Bản phát hành hiện tại: tag [`v1.1.0`](https://github.com/nghia4mt/windots/releases/tag/v1.1.0).
+Bản phát hành hiện tại: tag [`v1.2.0`](https://github.com/nghia4mt/windots/releases/tag/v1.2.0).
 
 ## Ghi chú
 
