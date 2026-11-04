@@ -5,6 +5,8 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-04
+
 ### Added
 
 - `debloat.cmd`: launcher cho debloat — tự tìm `pwsh`, xin quyền admin, chạy với `-NoExit` để cửa sổ không đóng mất kết quả.
