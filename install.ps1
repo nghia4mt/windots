@@ -13,7 +13,7 @@
       2. Install Scoop (per-user, no admin rights needed).
       3. Add the buckets required by the app list.
       4. Install the apps listed in $Apps (Sublime Text 4, Node.js, VS Code,
-         Python, ...) and OpenCode V2 (desktop app + `opencode` CLI shim).
+         Python, ...) and DeepSeek Harness (desktop app + `dsh` CLI shim).
       5. Restore the PowerShell 7 profile/config stored in .\config.
 
     Requires PowerShell 7 (tested with 7.6.9); Windows PowerShell 5.1 is no
@@ -26,7 +26,7 @@
     Do not install/verify Scoop.
 
 .PARAMETER SkipApps
-    Do not install the apps from $Apps, nor OpenCode V2.
+    Do not install the apps from $Apps, nor DeepSeek Harness.
 
 .PARAMETER SkipConfig
     Do not restore the PowerShell configuration from .\config.
@@ -68,10 +68,16 @@ $ScoopRoot   = if ($env:SCOOP) { $env:SCOOP } else { Join-Path $env:USERPROFILE 
 $ScoopShims  = Join-Path $ScoopRoot 'shims'
 $ScoopScript = Join-Path $ScoopShims 'scoop.ps1'
 
-# OpenCode V2 desktop (per-user install) and the CLI it bundles.
-$OpenCodeDir = Join-Path $env:LOCALAPPDATA 'Programs\ai.opencode.desktop'
-$OpenCodeCli = Join-Path $OpenCodeDir 'resources\opencode-cli.exe'
-$OpenCodeUrl = 'https://opencode.ai/update/api/latest/desktop/opencode/opencode-desktop-win-{0}.exe'
+# DeepSeek Harness desktop (per-user install) and the CLI it bundles. The CLI
+# path is kept relative to %LOCALAPPDATA% so the generated shims can stay pure
+# ASCII (batch files are decoded with the console code page, which would mangle
+# a literal path under a non-ASCII profile such as C:\Users\Nguyễn).
+$DshDir     = Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Harness'
+$DshExe     = Join-Path $DshDir 'DeepSeek Harness.exe'
+$DshCliRel  = 'Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd'
+$DshCli     = Join-Path $env:LOCALAPPDATA $DshCliRel
+# electron-builder update feed: release version + installer URL + SHA-512.
+$DshFeed = 'https://download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml'
 
 # Buckets that must exist before installing $Apps.
 $Buckets = @('extras', 'nerd-fonts')
@@ -93,9 +99,9 @@ $DefaultApps = @(
     'extras/googlechrome'       # Google Chrome (stable)
     'main/python'               # Python
     'extras/telegram'           # Telegram Desktop (portable, persists tdata)
-    # OpenCode V2 is installed from opencode.ai (Install-OpenCode below):
-    # the Scoop `opencode-desktop` manifest is still V1 and Windows package
-    # managers are not supported by OpenCode V2.
+    'extras/discord'            # Discord (portable wrapper, persists data/log)
+    # DeepSeek Harness is a per-user Electron app, not a Scoop package; it is
+    # installed from download.deepseek.com by Install-DeepSeekHarness below.
 
     # quality of life
     'main/scoop-search'         # fast `scoop search`
@@ -400,57 +406,96 @@ function Get-WindowsArch {
     return 'x64'
 }
 
-function Get-OpenCodeVersion {
-    if (-not (Test-PathExists $OpenCodeCli)) { return $null }
+function Get-DshInstalledVersion {
+    if (-not (Test-PathExists $DshExe)) { return $null }
 
-    try {
-        $output = & $OpenCodeCli --version 2>$null
-        if (-not $output) { return $null }
-        return ($output | Select-Object -First 1).ToString().Trim()
+    $version = (Get-Item -LiteralPath $DshExe).VersionInfo.FileVersion
+    if ([string]::IsNullOrWhiteSpace($version)) { return 'unknown' }
+    return $version.Trim()
+}
+
+function ConvertFrom-DshFeed {
+    # nightly.yml is electron-builder's generic update feed: the release
+    # version, the installer URL and its SHA-512. Both keys use YAML's folded
+    # ">-" style, so this parses the two values it needs instead of pulling in
+    # a YAML dependency.
+    param([Parameter(Mandatory)][string] $Content)
+
+    $version = [regex]::Match($Content, '(?m)^version:\s*(\S+)').Groups[1].Value
+    $url     = [regex]::Match($Content, 'https://download\.deepseek\.com/dsh-desk/bin/\S+\.exe').Value
+    $sha512  = [regex]::Match($Content, 'sha512:\s*>-\s*([A-Za-z0-9+/=]{40,})').Groups[1].Value
+
+    if (-not $version -or -not $url) {
+        throw 'the update feed has no version/installer URL'
     }
-    catch {
-        return $null
+
+    return [pscustomobject]@{
+        Version = $version
+        Url     = $url
+        Sha512  = $sha512
     }
 }
 
-function Test-OpenCodeV2Installed {
-    $version = Get-OpenCodeVersion
-    return [bool]($version -match '^(opencode\s+)?v?2\.')
+function Get-DshRelease {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $response = Invoke-WebRequest -Uri $DshFeed -UseBasicParsing
+    return ConvertFrom-DshFeed -Content $response.Content
 }
 
-function Install-OpenCode {
-    $version = Get-OpenCodeVersion
-    if (Test-OpenCodeV2Installed) {
-        Write-Ok "OpenCode V2 already installed ($version)"
+function Test-FileSha512 {
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $Sha512   # base64, as published in the feed
+    )
+
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA512).Hash
+    return ([Convert]::ToBase64String([Convert]::FromHexString($hash)) -eq $Sha512)
+}
+
+function Install-DeepSeekHarness {
+    $installed = Get-DshInstalledVersion
+    if ($installed) {
+        # The desktop app updates itself (electron-updater), so an installed
+        # copy is enough: re-downloading ~290 MB on every run is not.
+        Write-Ok "DeepSeek Harness already installed ($installed)"
         return
     }
 
-    # The old Scoop package is OpenCode V1 and lives next to the V2 install.
-    # Remove it so the Start menu and PATH do not keep a stale copy.
-    if (Test-ScoopAppInstalled 'extras/opencode-desktop') {
-        Write-Info 'removing the old OpenCode V1 Scoop package ...'
-        try {
-            & $ScoopScript uninstall 'opencode-desktop'
-            Write-Ok 'OpenCode V1 (Scoop) removed'
-        }
-        catch {
-            Write-Warn "could not remove the V1 Scoop package: $($_.Exception.Message)"
-        }
+    if ((Get-WindowsArch) -ne 'x64') {
+        # download.deepseek.com only publishes the win-x64 desktop build.
+        Write-Warn 'no DeepSeek Harness desktop build for this architecture, skipping'
+        return
     }
-
-    $arch = Get-WindowsArch
-    $url = $OpenCodeUrl -f $arch
-    $installer = Join-Path $env:TEMP "opencode-desktop-win-$arch.exe"
 
     try {
-        Write-Info 'downloading OpenCode V2 desktop from opencode.ai ...'
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-        Write-Info 'installing OpenCode V2 (silent, per-user) ...'
-        Start-Process -FilePath $installer -ArgumentList '/currentuser', '/S' -Wait
+        Write-Info "resolving the latest DeepSeek Harness release from $DshFeed ..."
+        $release = Get-DshRelease
     }
     catch {
-        Write-Fail "OpenCode V2: $($_.Exception.Message)"
+        Write-Fail "could not read the DeepSeek Harness update feed: $($_.Exception.Message)"
+        return
+    }
+
+    $installer = Join-Path $env:TEMP "deepseek-harness-$($release.Version)-win-x64.exe"
+
+    try {
+        Write-Info "downloading DeepSeek Harness $($release.Version) (~290 MB) ..."
+        Invoke-WebRequest -Uri $release.Url -OutFile $installer -UseBasicParsing
+
+        if ($release.Sha512) {
+            if (-not (Test-FileSha512 -Path $installer -Sha512 $release.Sha512)) {
+                throw 'SHA-512 mismatch, the download is corrupt'
+            }
+        }
+        else {
+            Write-Warn 'the update feed has no SHA-512 for this release, installing unverified'
+        }
+
+        Write-Info 'installing DeepSeek Harness (silent, per-user) ...'
+        Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+    }
+    catch {
+        Write-Fail "DeepSeek Harness: $($_.Exception.Message)"
         return
     }
     finally {
@@ -460,39 +505,43 @@ function Install-OpenCode {
     }
 
     # NSIS can return before the worker process has written the files.
-    $deadline = (Get-Date).AddSeconds(60)
-    while (-not (Test-OpenCodeV2Installed) -and (Get-Date) -lt $deadline) {
+    $deadline = (Get-Date).AddSeconds(120)
+    while (-not (Get-DshInstalledVersion) -and (Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 1
     }
 
-    if (Test-OpenCodeV2Installed) {
-        Write-Ok "OpenCode V2 installed ($(Get-OpenCodeVersion))"
+    if (Get-DshInstalledVersion) {
+        Write-Ok "DeepSeek Harness installed ($(Get-DshInstalledVersion))"
     }
     else {
-        Write-Fail 'OpenCode V2 installer finished but the CLI was not found; re-run this script'
+        Write-Fail 'the installer finished but the app was not found; re-run this script'
     }
 }
 
-function Set-OpenCodeCli {
-    # The desktop bundle ships the CLI; expose it as `opencode` in PowerShell,
-    # cmd.exe and Git Bash.
-    if (-not (Test-PathExists $OpenCodeCli)) {
-        Write-Warn 'opencode-cli.exe not found, skipping the CLI shim'
+function Set-DshCli {
+    # DeepSeek Harness ships its Node CLI (the agent + `dsh web`) inside the
+    # desktop bundle; expose it as `dsh` in PowerShell, cmd.exe and Git Bash.
+    param([string] $BinDir = (Join-Path $env:USERPROFILE '.local\bin'))
+
+    if (-not (Test-PathExists $DshCli)) {
+        Write-Warn 'the bundled DeepSeek Harness CLI was not found, skipping the dsh shim'
         return
     }
 
-    $binDir = Join-Path $env:USERPROFILE '.local\bin'
-    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 
-    $cmdContent = "@echo off`r`n`"$OpenCodeCli`" %*`r`n"
-    [IO.File]::WriteAllText((Join-Path $binDir 'opencode.cmd'), $cmdContent, [Text.Encoding]::ASCII)
+    # Forward to the shim that ships with the app: it sets
+    # ELECTRON_RUN_AS_NODE and runs the CLI on the bundled Node runtime. Both
+    # wrappers expand %LOCALAPPDATA% at run time, so they contain ASCII only.
+    $cmdContent = "@echo off`r`ncall `"%LOCALAPPDATA%\$DshCliRel`" %*`r`n"
+    [IO.File]::WriteAllText((Join-Path $BinDir 'dsh.cmd'), $cmdContent, [Text.Encoding]::ASCII)
 
-    $shCli = $OpenCodeCli -replace '\\', '/'
-    $shContent = "#!/bin/sh`nexec `"$shCli`" `"`$@`"`n"
-    [IO.File]::WriteAllText((Join-Path $binDir 'opencode'), $shContent, [Text.Encoding]::ASCII)
+    $shRel = $DshCliRel -replace '\\', '/'
+    $shContent = "#!/bin/sh`n# Git Bash wrapper: MSYS runs the .cmd shim through cmd.exe.`nexec `"`$LOCALAPPDATA/$shRel`" `"`$@`"`n"
+    [IO.File]::WriteAllText((Join-Path $BinDir 'dsh'), $shContent, [Text.Encoding]::ASCII)
 
-    Add-UserPath $binDir
-    Write-Ok 'opencode CLI shim installed'
+    Add-UserPath $BinDir
+    Write-Ok 'dsh CLI shim installed'
 }
 
 # ---------------------------------------------------------------- dotfiles
@@ -585,7 +634,7 @@ function Write-Summary {
             (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe')
         )
         subl     = @((Join-Path $ScoopShims 'subl.exe'))
-        opencode = @((Join-Path $env:USERPROFILE '.local\bin\opencode.cmd'))
+        dsh      = @((Join-Path $env:USERPROFILE '.local\bin\dsh.cmd'))
     }
 
     foreach ($name in $checks.Keys) {
@@ -625,9 +674,9 @@ if (-not $SkipApps) {
         Write-Step 'Installing apps via Scoop'
         Install-AppList
 
-        Write-Step 'Installing OpenCode V2'
-        Install-OpenCode
-        Set-OpenCodeCli
+        Write-Step 'Installing DeepSeek Harness'
+        Install-DeepSeekHarness
+        Set-DshCli
     }
 }
 
