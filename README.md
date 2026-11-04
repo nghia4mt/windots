@@ -1,6 +1,6 @@
 # windots
 
-Bộ script tự động dựng lại môi trường Windows sau khi cài lại máy: cài **Scoop**, cài các app hằng ngày (Sublime Text 4, Node.js, VS Code, Google Chrome, Python, Telegram Desktop, Discord, OpenCode...), khôi phục cấu hình PowerShell và dọn app rác của Windows 11.
+Bộ script tự động dựng lại môi trường Windows sau khi cài lại máy: cài **Scoop**, cài các app hằng ngày (Sublime Text 4, Node.js, VS Code, Google Chrome, Python, Telegram Desktop, Discord, DeepSeek Harness...), khôi phục cấu hình PowerShell và dọn app rác của Windows 11.
 
 ## Cấu trúc
 
@@ -51,11 +51,11 @@ Script làm theo thứ tự, và **chạy lại nhiều lần vẫn an toàn** (
    - `python`
    - `telegram` (Telegram Desktop, bản Scoop portable — giữ `tdata` khi cập nhật)
    - `discord` (Discord, bản portable — giữ `data`/`log` khi cập nhật)
-   - OpenCode **V2** (desktop, tải từ opencode.ai) + tạo shim lệnh `opencode` trong `~\.local\bin`
+   - DeepSeek **Harness** (desktop, tải từ download.deepseek.com) + tạo shim lệnh `dsh` trong `~\.local\bin`
    - git, 7zip, aria2, dark, lessmsi, innounp, scoop-search, scoop-completion, JetBrainsMono Nerd Font
 5. Khôi phục profile PowerShell 7 trong `config\` vào `Documents\PowerShell`. File đang có trên máy sẽ được sao lưu thành `*.bak.<thời-gian>` trước khi ghi đè.
 
-> OpenCode V2 **không cài qua Scoop**: manifest `opencode-desktop` của Scoop vẫn là V1 (1.19.x) và V2 không hỗ trợ Windows package manager. Script tải installer chính thức từ `opencode.ai` và cài silent theo user (`/currentuser /S`), sau đó trỏ shim `opencode` vào `opencode-cli.exe` đi kèm. Nếu máy đã có V2 thì bỏ qua; nếu còn bản V1 cài bằng Scoop thì tự gỡ trước khi cài.
+> DeepSeek Harness **không cài qua Scoop** (Scoop không có manifest): script đọc feed cập nhật chính thức `https://download.deepseek.com/dsh-desk/feeds/win-x64/nightly.yml`, tải installer mới nhất, kiểm tra **SHA-512** rồi cài silent theo user (`/S`), sau đó tạo shim `dsh` trong `~\.local\bin` trỏ vào CLI đi kèm app. Máy đã có DeepSeek Harness thì bỏ qua (app tự cập nhật bằng electron-updater); hiện chỉ hỗ trợ win-x64.
 
 > `config\` hiện đã chứa bản chụp profile của máy này, nên có thể copy nguyên thư mục `windots` sang máy mới là dùng được ngay.
 
@@ -64,7 +64,7 @@ Script làm theo thứ tự, và **chạy lại nhiều lần vẫn an toàn** (
 | Tham số | Ý nghĩa |
 |---|---|
 | `-SkipScoop` | Không cài/kiểm tra Scoop |
-| `-SkipApps` | Không cài app (gồm cả OpenCode V2) |
+| `-SkipApps` | Không cài app (gồm cả DeepSeek Harness) |
 | `-SkipConfig` | Không khôi phục cấu hình PowerShell |
 | `-SymlinkConfig` | Link profile tới file trong repo thay vì copy (sửa repo là máy đổi theo; cần Developer Mode hoặc quyền admin, nếu lỗi sẽ tự fallback sang copy) |
 | `-Apps main/git,extras/firefox` | Cài danh sách app khác thay cho danh sách mặc định |
@@ -166,7 +166,7 @@ Bản phát hành hiện tại: tag [`v1.1.0`](https://github.com/nghia4mt/windo
 
 ## Ghi chú
 
-- Sau khi chạy xong, **mở terminal mới** để nhận PATH mới (`code`, `python`, `node`, `opencode`, `subl`, `chrome`...).
+- Sau khi chạy xong, **mở terminal mới** để nhận PATH mới (`code`, `python`, `node`, `dsh`, `subl`, `chrome`...).
 - Máy mới cần Internet; `install.ps1` không cần quyền admin, còn `debloat-app.ps1` nên chạy bằng admin.
 - Yêu cầu **PowerShell 7** (đã test với 7.6.9): `install.ps1`/`backup.ps1` dùng `#Requires -Version 7.0`; `debloat-app.ps1` kiểm tra phiên bản và báo rõ nếu bị chạy bằng Windows PowerShell 5.1. `debloat-app.ps1` nạp trực tiếp module `Appx`/`Dism` của Windows.
 - Cấu hình riêng của VS Code / Sublime / npm chưa nằm trong repo — chỉ cấu hình PowerShell. Muốn mang theo thì thêm đường dẫn vào `backup.ps1` / `install.ps1`.

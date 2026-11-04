@@ -11,15 +11,18 @@ Mọi thay đổi đáng chú ý của repo này được ghi ở đây.
 - `install.ps1`: cài **Telegram Desktop** (`extras/telegram`) trong danh sách app mặc định; Scoop giữ `tdata` khi cập nhật.
 - `install.ps1`: cài **Discord** (`extras/discord`, bản portable) trong danh sách app mặc định; Scoop giữ `data`/`log` khi cập nhật.
 - `debloat-app.ps1`: tham số `-RemoveEdgeProfile` xoá dữ liệu duyệt web Edge của user hiện tại (`%LOCALAPPDATA%\Microsoft\Edge`: bookmark, password, history, cookie) cùng các thư mục Edge cũ; dùng kèm `-RemoveEdge`.
+- `install.ps1`: cài **DeepSeek Harness** desktop từ feed chính thức `download.deepseek.com` (kiểm tra SHA-512, cài silent per-user) và tạo shim lệnh `dsh` trong `~\.local\bin` trỏ vào CLI đi kèm app.
 
 ### Changed
 
 - `install.ps1`/`backup.ps1` yêu cầu **PowerShell 7** (`#Requires -Version 7.0`). `debloat-app.ps1` tự kiểm tra phiên bản, bỏ phần tự khởi động lại trong Windows PowerShell 5.1 và nạp trực tiếp module `Appx`/`Dism` trên PowerShell 7.6.9.
 - `debloat-app.ps1` khi bị chạy bằng Windows PowerShell 5.1 (ví dụ right-click → "Run with PowerShell") sẽ hiện thông báo rõ ràng và giữ cửa sổ 20 giây thay vì đóng ngay.
+- `install.ps1`: bước cài OpenCode V2 được thay bằng DeepSeek Harness; phần summary kiểm tra `dsh` thay cho `opencode`.
 
 ### Removed
 
 - Cấu hình Windows PowerShell 5.1 (`config/WindowsPowerShell`); chỉ giữ `config/PowerShell` cho PowerShell 7. `install.ps1`/`backup.ps1` không còn đọc/ghi `Documents\WindowsPowerShell`.
+- `install.ps1`: bỏ tính năng cài OpenCode V2 (tải từ `opencode.ai`, tạo shim `opencode`, tự gỡ bản OpenCode V1 cài bằng Scoop).
 
 ### Fixed
 
